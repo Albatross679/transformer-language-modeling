@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transformer Computation Graph Editor</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            background: #f5f5f5;
+            overflow: hidden;
+        }
+        #toolbar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 50px;
+            background: #333;
+            color: white;
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
+            gap: 15px;
+            z-index: 100;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+        #toolbar h1 {
+            font-size: 16px;
+            font-weight: 500;
+            flex: 1;
+        }
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        .btn-primary {
+            background: #4CAF50;
+            color: white;
+        }
+        .btn-primary:hover {
+            background: #45a049;
+        }
+        .btn-secondary {
+            background: #2196F3;
+            color: white;
+        }
+        .btn-secondary:hover {
+            background: #1976D2;
+        }
+        .btn-warning {
+            background: #ff9800;
+            color: white;
+        }
+        .btn-warning:hover {
+            background: #f57c00;
+        }
+        #canvas-container {
+            position: fixed;
+            top: 50px;
+            left: 0;
+            right: 250px;
+            bottom: 0;
+            background: white;
+            overflow: hidden;
+        }
+        #graph-canvas {
+            width: 100%;
+            height: 100%;
+        }
+        #sidebar {
+            position: fixed;
+            top: 50px;
+            right: 0;
+            width: 250px;
+            bottom: 0;
+            background: #fafafa;
+            border-left: 1px solid #ddd;
+            padding: 15px;
+            overflow-y: auto;
+        }
+        #sidebar h2 {
+            font-size: 14px;
+            color: #333;
+            margin-bottom: 10px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #ddd;
+        }
+        #sidebar h3 {
+            font-size: 12px;
+            color: #666;
+            margin: 15px 0 8px 0;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 5px 0;
+            font-size: 12px;
+        }
+        .legend-circle {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            border: 2px solid #333;
+        }
+        .legend-double {
+            border: 3px double #333;
+        }
+        .selected-info {
+            margin-top: 15px;
+            padding: 10px;
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        .selected-info label {
+            display: block;
+            color: #666;
+            margin-bottom: 3px;
+        }
+        .selected-info input {
+            width: 100%;
+            padding: 5px;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+            font-size: 12px;
+            margin-bottom: 8px;
+        }
+        #instructions {
+            margin-top: 15px;
+            font-size: 11px;
+            color: #666;
+            line-height: 1.5;
+        }
+        #instructions kbd {
+            background: #eee;
+            padding: 2px 5px;
+            border-radius: 3px;
+            border: 1px solid #ccc;
+        }
+        /* SVG styles */
+        .node {
+            cursor: grab;
+        }
+        .node:active {
+            cursor: grabbing;
+        }
+        .node.selected circle {
+            stroke: #ff5722;
+            stroke-width: 3px;
+        }
+        .node text {
+            pointer-events: none;
+            user-select: none;
+            font-family: Helvetica, Arial, sans-serif;
+            font-size: 10px;
+            text-anchor: middle;
+            dominant-baseline: central;
+        }
+        .edge {
+            stroke: #666;
+            stroke-width: 1.5;
+            fill: none;
+            marker-end: url(#arrowhead);
+        }
+        #json-output {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 5px 30px rgba(0,0,0,0.3);
+            max-width: 600px;
+            max-height: 80vh;
+            overflow: auto;
+            z-index: 200;
+            display: none;
+        }
+        #json-output pre {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 4px;
+            font-size: 11px;
+            max-height: 400px;
+            overflow: auto;
+        }
+        #json-output .close-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: none;
+            border: none;
+            font-size: 20px;
+            cursor: pointer;
+            color: #666;
+        }
+        #overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 150;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="toolbar">
+        <h1>Transformer Computation Graph Editor</h1>
+        <button class="btn btn-warning" onclick="resetLayout()">Reset Layout</button>
+        <button class="btn btn-secondary" onclick="centerGraph()">Center Graph</button>
+        <button class="btn btn-primary" onclick="exportPositions()">Export JSON</button>
+    </div>
+
+    <div id="canvas-container">
+        <svg id="graph-canvas"></svg>
+    </div>
+
+    <div id="sidebar">
+        <h2>Legend</h2>
+        <div class="legend-item">
+            <div class="legend-circle legend-double" style="background: #E8F4FD;"></div>
+            <span>Parameters (W, b)</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-circle legend-double" style="background: #FFF3E0;"></div>
+            <span>Activations (x, Q, K, V)</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-circle" style="background: #E8F5E9;"></div>
+            <span>Operations (+, ×, σ)</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-circle legend-double" style="background: #F3E5F5;"></div>
+            <span>Constants (√d)</span>
+        </div>
+
+        <div id="selected-panel" class="selected-info" style="display: none;">
+            <h3>Selected Node</h3>
+            <label>ID: <span id="sel-id"></span></label>
+            <label>X:</label>
+            <input type="number" id="sel-x" onchange="updateSelectedPosition()">
+            <label>Y:</label>
+            <input type="number" id="sel-y" onchange="updateSelectedPosition()">
+        </div>
+
+        <div id="instructions">
+            <h3>Instructions</h3>
+            <p>• <strong>Drag</strong> nodes to reposition</p>
+            <p>• <strong>Click</strong> node to select & edit coordinates</p>
+            <p>• <strong>Export JSON</strong> to save positions</p>
+            <p>• Copy JSON into <code>positions.json</code></p>
+            <p>• Re-run Python script to render final graph</p>
+        </div>
+    </div>
+
+    <div id="overlay" onclick="closeExport()"></div>
+    <div id="json-output">
+        <button class="close-btn" onclick="closeExport()">&times;</button>
+        <h2>Exported Positions</h2>
+        <p style="margin: 10px 0; font-size: 12px; color: #666;">
+            Copy this JSON and save to <code>config/graph_positions.json</code>
+        </p>
+        <pre id="json-content"></pre>
+        <button class="btn btn-primary" style="margin-top: 10px;" onclick="copyToClipboard()">
+            Copy to Clipboard
+        </button>
+    </div>
+
+    <script>
+        // Graph data
+        const nodeInfo = {
+            // Input & Embedding
+            'idx':      { label: 'idx', category: 'activation' },
+            'W_emb':    { label: 'Wₑ', category: 'param' },
+            'PE':       { label: 'PE', category: 'param' },
+            'emb':      { label: 'emb', category: 'activation' },
+            'x0':       { label: 'x₀', category: 'activation' },
+
+            // Q, K, V Projections
+            'W_q':      { label: 'Wq', category: 'param' },
+            'b_q':      { label: 'bq', category: 'param' },
+            'Q':        { label: 'Q', category: 'activation' },
+            'W_k':      { label: 'Wk', category: 'param' },
+            'b_k':      { label: 'bk', category: 'param' },
+            'K':        { label: 'K', category: 'activation' },
+            'W_v':      { label: 'Wv', category: 'param' },
+            'b_v':      { label: 'bv', category: 'param' },
+            'V':        { label: 'V', category: 'activation' },
+
+            // Attention
+            'sqrt_d':   { label: '√d', category: 'constant' },
+            'scores':   { label: 's', category: 'activation' },
+            'attn':     { label: 'A', category: 'activation' },
+            'attn_out': { label: 'aₒ', category: 'activation' },
+
+            // Output projection
+            'W_o':      { label: 'Wₒ', category: 'param' },
+            'b_o':      { label: 'bₒ', category: 'param' },
+            'proj':     { label: 'p', category: 'activation' },
+            'x1':       { label: 'x₁', category: 'activation' },
+
+            // FFN
+            'W_ff1':    { label: 'Wf₁', category: 'param' },
+            'b_ff1':    { label: 'bf₁', category: 'param' },
+            'h':        { label: 'h', category: 'activation' },
+            'W_ff2':    { label: 'Wf₂', category: 'param' },
+            'b_ff2':    { label: 'bf₂', category: 'param' },
+            'ff2':      { label: 'f₂', category: 'activation' },
+            'x2':       { label: 'x₂', category: 'activation' },
+
+            // Output layer
+            'W_out':    { label: 'Wᵤ', category: 'param' },
+            'b_out':    { label: 'bᵤ', category: 'param' },
+            'logits':   { label: 'l', category: 'activation' },
+            'y_hat':    { label: 'ŷ', category: 'activation' },
+
+            // Operation nodes
+            'op_lookup':  { label: 'lookup', category: 'op' },
+            'op_pe_add':  { label: '+', category: 'op' },
+            'op_q':       { label: 'lin', category: 'op' },
+            'op_k':       { label: 'lin', category: 'op' },
+            'op_v':       { label: 'lin', category: 'op' },
+            'op_qk':      { label: '×', category: 'op' },
+            'op_scale':   { label: '÷', category: 'op' },
+            'op_softmax': { label: 'σ', category: 'op' },
+            'op_av':      { label: '×', category: 'op' },
+            'op_o':       { label: 'lin', category: 'op' },
+            'op_res1':    { label: '+', category: 'op' },
+            'op_ff1':     { label: 'lin', category: 'op' },
+            'op_relu':    { label: 'relu', category: 'op' },
+            'op_ff2':     { label: 'lin', category: 'op' },
+            'op_res2':    { label: '+', category: 'op' },
+            'op_out':     { label: 'lin', category: 'op' },
+            'op_logsm':   { label: 'logσ', category: 'op' },
+        };
+
+        const edges = [
+            ['idx', 'op_lookup'], ['W_emb', 'op_lookup'], ['op_lookup', 'emb'],
+            ['emb', 'op_pe_add'], ['PE', 'op_pe_add'], ['op_pe_add', 'x0'],
+            ['x0', 'op_q'], ['W_q', 'op_q'], ['b_q', 'op_q'], ['op_q', 'Q'],
+            ['x0', 'op_k'], ['W_k', 'op_k'], ['b_k', 'op_k'], ['op_k', 'K'],
+            ['x0', 'op_v'], ['W_v', 'op_v'], ['b_v', 'op_v'], ['op_v', 'V'],
+            ['Q', 'op_qk'], ['K', 'op_qk'], ['op_qk', 'scores'],
+            ['scores', 'op_scale'], ['sqrt_d', 'op_scale'], ['op_scale', 'op_softmax'],
+            ['op_softmax', 'attn'], ['attn', 'op_av'], ['V', 'op_av'],
+            ['op_av', 'attn_out'], ['attn_out', 'op_o'], ['W_o', 'op_o'],
+            ['b_o', 'op_o'], ['op_o', 'proj'], ['x0', 'op_res1'], ['proj', 'op_res1'],
+            ['op_res1', 'x1'], ['x1', 'op_ff1'], ['W_ff1', 'op_ff1'],
+            ['b_ff1', 'op_ff1'], ['op_ff1', 'op_relu'], ['op_relu', 'h'],
+            ['h', 'op_ff2'], ['W_ff2', 'op_ff2'], ['b_ff2', 'op_ff2'],
+            ['op_ff2', 'ff2'], ['x1', 'op_res2'], ['ff2', 'op_res2'],
+            ['op_res2', 'x2'], ['x2', 'op_out'], ['W_out', 'op_out'],
+            ['b_out', 'op_out'], ['op_out', 'logits'], ['logits', 'op_logsm'],
+            ['op_logsm', 'y_hat'],
+        ];
+
+        const categoryStyles = {
+            'param':      { fill: '#E8F4FD', stroke: '#333', double: true, r: 18 },
+            'op':         { fill: '#E8F5E9', stroke: '#333', double: false, r: 20 },
+            'activation': { fill: '#FFF3E0', stroke: '#333', double: true, r: 18 },
+            'constant':   { fill: '#F3E5F5', stroke: '#333', double: true, r: 15 },
+        };
+
+        // State
+        let positions = {};
+        let originalPositions = {};
+        let selectedNode = null;
+        let svg, nodesGroup, edgesGroup;
+        let width, height;
+
+        // Initialize with Kamada-Kawai-like layout (simplified)
+        function initializePositions() {
+            const nodes = Object.keys(nodeInfo);
+            const n = nodes.length;
+
+            // Simple layered layout as starting point
+            const layers = {
+                input: ['idx', 'W_emb', 'PE'],
+                embed: ['op_lookup', 'emb', 'op_pe_add', 'x0'],
+                qkv_params: ['W_q', 'b_q', 'W_k', 'b_k', 'W_v', 'b_v'],
+                qkv_ops: ['op_q', 'op_k', 'op_v'],
+                qkv_out: ['Q', 'K', 'V'],
+                attn: ['op_qk', 'scores', 'sqrt_d', 'op_scale', 'op_softmax', 'attn'],
+                attn_out: ['op_av', 'attn_out', 'W_o', 'b_o', 'op_o', 'proj'],
+                res1: ['op_res1', 'x1'],
+                ffn1: ['W_ff1', 'b_ff1', 'op_ff1', 'op_relu', 'h'],
+                ffn2: ['W_ff2', 'b_ff2', 'op_ff2', 'ff2'],
+                res2: ['op_res2', 'x2'],
+                output: ['W_out', 'b_out', 'op_out', 'logits', 'op_logsm', 'y_hat'],
+            };
+
+            const layerNames = Object.keys(layers);
+            const layerSpacing = 80;
+            const nodeSpacing = 60;
+            const startX = 100;
+            const startY = 100;
+
+            layerNames.forEach((layerName, layerIdx) => {
+                const layerNodes = layers[layerName];
+                const layerY = startY + layerIdx * layerSpacing;
+
+                layerNodes.forEach((nodeId, nodeIdx) => {
+                    const layerWidth = (layerNodes.length - 1) * nodeSpacing;
+                    const layerStartX = startX + (width - 300 - layerWidth) / 2;
+                    positions[nodeId] = {
+                        x: layerStartX + nodeIdx * nodeSpacing,
+                        y: layerY
+                    };
+                });
+            });
+
+            // Deep copy for reset
+            originalPositions = JSON.parse(JSON.stringify(positions));
+        }
+
+        function init() {
+            svg = document.getElementById('graph-canvas');
+            const container = document.getElementById('canvas-container');
+            width = container.clientWidth;
+            height = container.clientHeight;
+
+            svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+
+            // Create arrow marker
+            const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+            defs.innerHTML = `
+                <marker id="arrowhead" markerWidth="10" markerHeight="7"
+                        refX="9" refY="3.5" orient="auto">
+                    <polygon points="0 0, 10 3.5, 0 7" fill="#666" />
+                </marker>
+            `;
+            svg.appendChild(defs);
+
+            // Create groups for edges (below) and nodes (above)
+            edgesGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+            edgesGroup.id = 'edges';
+            svg.appendChild(edgesGroup);
+
+            nodesGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+            nodesGroup.id = 'nodes';
+            svg.appendChild(nodesGroup);
+
+            initializePositions();
+            render();
+
+            // Click on canvas to deselect
+            svg.addEventListener('click', (e) => {
+                if (e.target === svg || e.target.tagName === 'line' || e.target.tagName === 'path') {
+                    selectNode(null);
+                }
+            });
+        }
+
+        function render() {
+            // Clear
+            edgesGroup.innerHTML = '';
+            nodesGroup.innerHTML = '';
+
+            // Draw edges
+            edges.forEach(([src, tgt]) => {
+                const srcPos = positions[src];
+                const tgtPos = positions[tgt];
+                if (!srcPos || !tgtPos) return;
+
+                const srcStyle = categoryStyles[nodeInfo[src].category];
+                const tgtStyle = categoryStyles[nodeInfo[tgt].category];
+
+                // Calculate edge endpoints (from circle edge, not center)
+                const dx = tgtPos.x - srcPos.x;
+                const dy = tgtPos.y - srcPos.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist === 0) return;
+
+                const ux = dx / dist;
+                const uy = dy / dist;
+
+                const x1 = srcPos.x + ux * srcStyle.r;
+                const y1 = srcPos.y + uy * srcStyle.r;
+                const x2 = tgtPos.x - ux * (tgtStyle.r + 8); // Extra space for arrow
+                const y2 = tgtPos.y - uy * (tgtStyle.r + 8);
+
+                const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                line.setAttribute('x1', x1);
+                line.setAttribute('y1', y1);
+                line.setAttribute('x2', x2);
+                line.setAttribute('y2', y2);
+                line.setAttribute('class', 'edge');
+                edgesGroup.appendChild(line);
+            });
+
+            // Draw nodes
+            Object.entries(nodeInfo).forEach(([nodeId, info]) => {
+                const pos = positions[nodeId];
+                if (!pos) return;
+
+                const style = categoryStyles[info.category];
+                const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+                g.setAttribute('class', 'node');
+                g.setAttribute('data-id', nodeId);
+                g.setAttribute('transform', `translate(${pos.x}, ${pos.y})`);
+
+                // Double circle for certain categories
+                if (style.double) {
+                    const outerCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                    outerCircle.setAttribute('r', style.r);
+                    outerCircle.setAttribute('fill', style.fill);
+                    outerCircle.setAttribute('stroke', style.stroke);
+                    outerCircle.setAttribute('stroke-width', '2');
+                    g.appendChild(outerCircle);
+
+                    const innerCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                    innerCircle.setAttribute('r', style.r - 4);
+                    innerCircle.setAttribute('fill', style.fill);
+                    innerCircle.setAttribute('stroke', style.stroke);
+                    innerCircle.setAttribute('stroke-width', '1');
+                    g.appendChild(innerCircle);
+                } else {
+                    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                    circle.setAttribute('r', style.r);
+                    circle.setAttribute('fill', style.fill);
+                    circle.setAttribute('stroke', style.stroke);
+                    circle.setAttribute('stroke-width', '2');
+                    g.appendChild(circle);
+                }
+
+                // Label
+                const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                text.textContent = info.label;
+                text.setAttribute('fill', '#333');
+                g.appendChild(text);
+
+                // Drag handling
+                let isDragging = false;
+                let startX, startY, startPosX, startPosY;
+
+                g.addEventListener('mousedown', (e) => {
+                    isDragging = true;
+                    startX = e.clientX;
+                    startY = e.clientY;
+                    startPosX = pos.x;
+                    startPosY = pos.y;
+                    selectNode(nodeId);
+                    e.stopPropagation();
+                });
+
+                document.addEventListener('mousemove', (e) => {
+                    if (!isDragging) return;
+                    const dx = e.clientX - startX;
+                    const dy = e.clientY - startY;
+                    positions[nodeId].x = startPosX + dx;
+                    positions[nodeId].y = startPosY + dy;
+                    render();
+                    updateSelectedPanel();
+                });
+
+                document.addEventListener('mouseup', () => {
+                    isDragging = false;
+                });
+
+                nodesGroup.appendChild(g);
+            });
+
+            // Highlight selected
+            if (selectedNode) {
+                const nodeEl = nodesGroup.querySelector(`[data-id="${selectedNode}"]`);
+                if (nodeEl) nodeEl.classList.add('selected');
+            }
+        }
+
+        function selectNode(nodeId) {
+            selectedNode = nodeId;
+            const panel = document.getElementById('selected-panel');
+
+            if (nodeId) {
+                panel.style.display = 'block';
+                document.getElementById('sel-id').textContent = nodeId;
+                updateSelectedPanel();
+            } else {
+                panel.style.display = 'none';
+            }
+            render();
+        }
+
+        function updateSelectedPanel() {
+            if (!selectedNode) return;
+            const pos = positions[selectedNode];
+            document.getElementById('sel-x').value = Math.round(pos.x);
+            document.getElementById('sel-y').value = Math.round(pos.y);
+        }
+
+        function updateSelectedPosition() {
+            if (!selectedNode) return;
+            positions[selectedNode].x = parseFloat(document.getElementById('sel-x').value);
+            positions[selectedNode].y = parseFloat(document.getElementById('sel-y').value);
+            render();
+        }
+
+        function resetLayout() {
+            positions = JSON.parse(JSON.stringify(originalPositions));
+            render();
+        }
+
+        function centerGraph() {
+            // Find bounding box
+            let minX = Infinity, maxX = -Infinity;
+            let minY = Infinity, maxY = -Infinity;
+
+            Object.values(positions).forEach(pos => {
+                minX = Math.min(minX, pos.x);
+                maxX = Math.max(maxX, pos.x);
+                minY = Math.min(minY, pos.y);
+                maxY = Math.max(maxY, pos.y);
+            });
+
+            const graphWidth = maxX - minX;
+            const graphHeight = maxY - minY;
+            const centerX = (width - 250) / 2;  // Account for sidebar
+            const centerY = height / 2;
+            const offsetX = centerX - (minX + graphWidth / 2);
+            const offsetY = centerY - (minY + graphHeight / 2);
+
+            Object.keys(positions).forEach(nodeId => {
+                positions[nodeId].x += offsetX;
+                positions[nodeId].y += offsetY;
+            });
+
+            render();
+        }
+
+        function exportPositions() {
+            const exportData = {};
+            Object.entries(positions).forEach(([nodeId, pos]) => {
+                exportData[nodeId] = [Math.round(pos.x * 10) / 10, Math.round(pos.y * 10) / 10];
+            });
+
+            const json = JSON.stringify(exportData, null, 2);
+            document.getElementById('json-content').textContent = json;
+            document.getElementById('overlay').style.display = 'block';
+            document.getElementById('json-output').style.display = 'block';
+        }
+
+        function closeExport() {
+            document.getElementById('overlay').style.display = 'none';
+            document.getElementById('json-output').style.display = 'none';
+        }
+
+        function copyToClipboard() {
+            const json = document.getElementById('json-content').textContent;
+            navigator.clipboard.writeText(json).then(() => {
+                alert('Copied to clipboard!');
+            });
+        }
+
+        // Initialize on load
+        window.addEventListener('load', init);
+        window.addEventListener('resize', () => {
+            const container = document.getElementById('canvas-container');
+            width = container.clientWidth;
+            height = container.clientHeight;
+            svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+            render();
+        });
+    </script>
+</body>
+</html>

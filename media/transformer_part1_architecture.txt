@@ -1,0 +1,56 @@
+======================================================================
+Part 1 Transformer Architecture Summary
+======================================================================
+
+Configuration:
+  vocab_size: 27
+  num_positions: 20
+  d_model: 64
+  d_internal: 64
+  num_classes: 3
+  num_layers: 1
+
+Model Structure:
+Transformer(
+  (embedding): Embedding(27, 64)
+  (positional_encoding): PositionalEncoding(
+    (emb): Embedding(20, 64)
+  )
+  (layers): ModuleList(
+    (0): TransformerLayer(
+      (W_q): Linear(in_features=64, out_features=64, bias=True)
+      (W_k): Linear(in_features=64, out_features=64, bias=True)
+      (W_v): Linear(in_features=64, out_features=64, bias=True)
+      (W_o): Linear(in_features=64, out_features=64, bias=True)
+      (ff1): Linear(in_features=64, out_features=64, bias=True)
+      (ff2): Linear(in_features=64, out_features=64, bias=True)
+    )
+  )
+  (output_proj): Linear(in_features=64, out_features=3, bias=True)
+)
+
+ONNX Graph Nodes:
+  [ 0] Gather         : /model/embedding/Gather
+  [ 1] Add            : /model/positional_encoding/Add
+  [ 2] Gemm           : /model/layers.0/W_q/Gemm
+  [ 3] Gemm           : /model/layers.0/W_k/Gemm
+  [ 4] Gemm           : /model/layers.0/W_v/Gemm
+  [ 5] Transpose      : /model/layers.0/Transpose
+  [ 6] MatMul         : /model/layers.0/MatMul
+  [ 7] Constant       : /model/layers.0/Constant
+  [ 8] Div            : /model/layers.0/Div
+  [ 9] Softmax        : /model/layers.0/Softmax
+  [10] MatMul         : /model/layers.0/MatMul_1
+  [11] Gemm           : /model/layers.0/W_o/Gemm
+  [12] Add            : /model/layers.0/Add
+  [13] Gemm           : /model/layers.0/ff1/Gemm
+  [14] Relu           : /model/layers.0/Relu
+  [15] Gemm           : /model/layers.0/ff2/Gemm
+  [16] Add            : /model/layers.0/Add_1
+  [17] Gemm           : /model/output_proj/Gemm
+  [18] LogSoftmax     : /model/LogSoftmax
+
+======================================================================
+To visualize interactively, run:
+  netron /teamspace/studios/this_studio/assignment2/model/transformer_part1.onnx
+======================================================================

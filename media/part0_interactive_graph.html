@@ -1,0 +1,936 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Part 0: Transformer Architecture - Interactive Graph</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            overflow: hidden;
+        }
+        #container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: calc(100% - 280px);
+            height: 100%;
+            overflow: hidden;
+            cursor: grab;
+        }
+        #container:active { cursor: grabbing; }
+        #graph {
+            transform-origin: 0 0;
+        }
+        .node {
+            position: absolute;
+            border-radius: 8px;
+            cursor: move;
+            user-select: none;
+            min-width: 140px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            transition: box-shadow 0.15s;
+        }
+        .node:hover { box-shadow: 0 6px 20px rgba(0,0,0,0.4); }
+        .node.selected { box-shadow: 0 0 0 3px #ff5252, 0 6px 20px rgba(0,0,0,0.4); }
+        .node-header {
+            padding: 8px 12px;
+            font-weight: 600;
+            font-size: 14px;
+            border-radius: 8px 8px 0 0;
+            text-align: center;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        .node-body {
+            padding: 8px 12px;
+            font-size: 12px;
+            text-align: center;
+            border-radius: 0 0 8px 8px;
+            background: rgba(0,0,0,0.15);
+        }
+        #sidebar {
+            position: fixed;
+            right: 0;
+            top: 0;
+            width: 280px;
+            height: 100%;
+            background: #16213e;
+            padding: 20px;
+            overflow-y: auto;
+            border-left: 1px solid #333;
+        }
+        h2 { font-size: 18px; margin-bottom: 16px; color: #fff; }
+        h3 { font-size: 14px; margin: 16px 0 8px; color: #aaa; }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin: 8px 0;
+            font-size: 13px;
+        }
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 4px;
+            margin-right: 10px;
+        }
+        .info-panel {
+            background: #1a1a2e;
+            padding: 12px;
+            border-radius: 8px;
+            margin-top: 12px;
+            font-size: 13px;
+        }
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 6px 0;
+        }
+        .info-label { color: #888; }
+        .info-value { color: #fff; font-family: monospace; }
+        .controls {
+            display: flex;
+            gap: 8px;
+            margin-top: 16px;
+        }
+        button {
+            background: #2196F3;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            flex: 1;
+        }
+        button:hover { background: #1976D2; }
+        .zoom-controls {
+            display: flex;
+            gap: 4px;
+            margin-top: 12px;
+        }
+        .zoom-btn {
+            width: 36px;
+            height: 36px;
+            font-size: 20px;
+            padding: 0;
+            flex: none;
+        }
+        #selection-rect {
+            position: absolute;
+            border: 2px dashed #2196F3;
+            background: rgba(33, 150, 243, 0.1);
+            pointer-events: none;
+            display: none;
+        }
+        svg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+            overflow: visible;
+        }
+        .edge {
+            fill: none;
+            stroke: #666;
+            stroke-width: 2;
+        }
+        .edge-arrow {
+            fill: #666;
+        }
+        .instructions {
+            font-size: 12px;
+            color: #888;
+            margin-top: 16px;
+            line-height: 1.6;
+        }
+        .instructions li { margin: 4px 0; }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="graph">
+            <svg id="edges-svg"></svg>
+            <div id="nodes-container"></div>
+            <div id="selection-rect"></div>
+        </div>
+    </div>
+    <div id="sidebar">
+        <h2>Part 0: Transformer Architecture</h2>
+
+        <h3>Legend</h3>
+        <div class="legend-item">
+            <div class="legend-color" style="background: #2196F3;"></div>
+            <span>Input / Output</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background: #37474F;"></div>
+            <span>Operations</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background: #7B1FA2;"></div>
+            <span>Learnable Parameters</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background: #FF9800;"></div>
+            <span>Constants</span>
+        </div>
+
+        <h3>Selection</h3>
+        <div class="info-panel" id="selection-info">
+            <div class="info-row">
+                <span class="info-label">Node:</span>
+                <span class="info-value" id="info-id">-</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Type:</span>
+                <span class="info-value" id="info-type">-</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">X:</span>
+                <span class="info-value" id="info-x">-</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Y:</span>
+                <span class="info-value" id="info-y">-</span>
+            </div>
+        </div>
+
+        <div class="zoom-controls">
+            <button class="zoom-btn" onclick="zoomIn()">+</button>
+            <button class="zoom-btn" onclick="zoomOut()">−</button>
+            <button class="zoom-btn" onclick="resetView()">⌂</button>
+        </div>
+
+        <div class="controls">
+            <button onclick="exportPositions()">Export JSON</button>
+        </div>
+
+        <h3>Instructions</h3>
+        <ul class="instructions">
+            <li>Scroll to pan the view</li>
+            <li>Drag nodes to reposition</li>
+            <li>Shift+Click to multi-select</li>
+            <li>Drag on canvas to box-select</li>
+            <li>Use +/− buttons to zoom</li>
+        </ul>
+    </div>
+
+    <script>
+        // Data
+        const nodesData = [
+  {
+    "id": "input_0",
+    "type": "Input",
+    "formula": "x = input",
+    "color": "#2196F3",
+    "text_color": "white",
+    "body_lines": [
+      "x (seq_len,)"
+    ],
+    "x": 700.0,
+    "y": 80
+  },
+  {
+    "id": "param_E",
+    "type": "Param",
+    "formula": "E",
+    "color": "#7B1FA2",
+    "text_color": "white",
+    "body_lines": [
+      "(vocab,d_model)"
+    ],
+    "x": 500.0,
+    "y": 80
+  },
+  {
+    "id": "op_embed",
+    "type": "Op",
+    "formula": "e = E[x]",
+    "color": "#37474F",
+    "text_color": "white",
+    "body_lines": [
+      "e (seq_len,d_model)"
+    ],
+    "x": 700.0,
+    "y": 180
+  },
+  {
+    "id": "param_PE",
+    "type": "Param",
+    "formula": "PE",
+    "color": "#7B1FA2",
+    "text_color": "white",
+    "body_lines": [
+      "(seq_len,d_model)"
+    ],
+    "x": 500.0,
+    "y": 180
+  },
+  {
+    "id": "op_pos_add",
+    "type": "Op",
+    "formula": "x = e + PE",
+    "color": "#37474F",
+    "text_color": "white",
+    "body_lines": [
+      "x (seq_len,d_model)"
+    ],
+    "x": 700.0,
+    "y": 280
+  },
+  {
+    "id": "param_Wq",
+    "type": "Param",
+    "formula": "Wq",
+    "color": "#7B1FA2",
+    "text_color": "white",
+    "body_lines": [
+      "(d_model,d_k)"
+    ],
+    "x": 500.0,
+    "y": 280
+  },
+  {
+    "id": "param_Wk",
+    "type": "Param",
+    "formula": "Wk",
+    "color": "#7B1FA2",
+    "text_color": "white",
+    "body_lines": [
+      "(d_model,d_k)"
+    ],
+    "x": 900.0,
+    "y": 280
+  },
+  {
+    "id": "param_Wv",
+    "type": "Param",
+    "formula": "Wv",
+    "color": "#7B1FA2",
+    "text_color": "white",
+    "body_lines": [
+      "(d_model,d_v)"
+    ],
+    "x": 300.0,
+    "y": 280
+  },
+  {
+    "id": "op_Q",
+    "type": "Op",
+    "formula": "Q = x\u00b7Wq",
+    "color": "#37474F",
+    "text_color": "white",
+    "body_lines": [
+      "Q (seq_len,d_k)"
+    ],
+    "x": 700.0,
+    "y": 380
+  },
+  {
+    "id": "op_K",
+    "type": "Op",
+    "formula": "K = x\u00b7Wk",
+    "color": "#37474F",
+    "text_color": "white",
+    "body_lines": [
+      "K (seq_len,d_k)"
+    ],
+    "x": 500.0,
+    "y": 380
+  },
+  {
+    "id": "op_V",
+    "type": "Op",
+    "formula": "V = x\u00b7Wv",
+    "color": "#37474F",
+    "text_color": "white",
+    "body_lines": [
+      "V (seq_len,d_v)"
+    ],
+    "x": 900.0,
+    "y": 380
+  },
+  {
+    "id": "const_sqrt",
+    "type": "Const",
+    "formula": "\u221ad_k",
+    "color": "#FF9800",
+    "text_color": "white",
+    "body_lines": [
+      "scalar"
+    ],
+    "x": 300.0,
+    "y": 380
+  },
+  {
+    "id": "op_scores",
+    "type": "Op",
+    "formula": "s = Q\u00b7K\u1d40 / \u221ad_k",
+    "color": "#37474F",
+    "text_color": "white",
+    "body_lines": [
+      "s (seq_len,seq_len)"
+    ],
+    "x": 600.0,
+    "y": 480
+  },
+  {
+    "id": "op_softmax",
+    "type": "Op",
+    "formula": "\u03b1 = softmax(s)",
+    "color": "#37474F",
+    "text_color": "white",
+    "body_lines": [
+      "\u03b1 (seq_len,seq_len)"
+    ],
+    "x": 600.0,
+    "y": 580
+  },
+  {
+    "id": "op_context",
+    "type": "Op",
+    "formula": "c = \u03b1\u00b7V",
+    "color": "#37474F",
+    "text_color": "white",
+    "body_lines": [
+      "c (seq_len,d_v)"
+    ],
+    "x": 700.0,
+    "y": 680
+  },
+  {
+    "id": "param_Wo",
+    "type": "Param",
+    "formula": "Wo",
+    "color": "#7B1FA2",
+    "text_color": "white",
+    "body_lines": [
+      "(d_v,d_model)"
+    ],
+    "x": 500.0,
+    "y": 680
+  },
+  {
+    "id": "op_attn_out",
+    "type": "Op",
+    "formula": "a = c\u00b7Wo",
+    "color": "#37474F",
+    "text_color": "white",
+    "body_lines": [
+      "a (seq_len,d_model)"
+    ],
+    "x": 600.0,
+    "y": 780
+  },
+  {
+    "id": "op_res1",
+    "type": "Op",
+    "formula": "z = x + a",
+    "color": "#37474F",
+    "text_color": "white",
+    "body_lines": [
+      "z (seq_len,d_model)"
+    ],
+    "x": 700.0,
+    "y": 880
+  },
+  {
+    "id": "param_W1",
+    "type": "Param",
+    "formula": "W1",
+    "color": "#7B1FA2",
+    "text_color": "white",
+    "body_lines": [
+      "(d_model,d_ff)"
+    ],
+    "x": 500.0,
+    "y": 880
+  },
+  {
+    "id": "op_ff1",
+    "type": "Op",
+    "formula": "h = ReLU(z\u00b7W1)",
+    "color": "#37474F",
+    "text_color": "white",
+    "body_lines": [
+      "h (seq_len,d_ff)"
+    ],
+    "x": 700.0,
+    "y": 980
+  },
+  {
+    "id": "param_W2",
+    "type": "Param",
+    "formula": "W2",
+    "color": "#7B1FA2",
+    "text_color": "white",
+    "body_lines": [
+      "(d_ff,d_model)"
+    ],
+    "x": 500.0,
+    "y": 980
+  },
+  {
+    "id": "op_ff2",
+    "type": "Op",
+    "formula": "f = h\u00b7W2",
+    "color": "#37474F",
+    "text_color": "white",
+    "body_lines": [
+      "f (seq_len,d_model)"
+    ],
+    "x": 600.0,
+    "y": 1080
+  },
+  {
+    "id": "op_res2",
+    "type": "Op",
+    "formula": "out = z + f",
+    "color": "#37474F",
+    "text_color": "white",
+    "body_lines": [
+      "out (seq_len,d_model)"
+    ],
+    "x": 700.0,
+    "y": 1180
+  },
+  {
+    "id": "param_Wout",
+    "type": "Param",
+    "formula": "Wout",
+    "color": "#7B1FA2",
+    "text_color": "white",
+    "body_lines": [
+      "(d_model,num_classes)"
+    ],
+    "x": 500.0,
+    "y": 1180
+  },
+  {
+    "id": "op_logits",
+    "type": "Op",
+    "formula": "logits = out\u00b7Wout",
+    "color": "#37474F",
+    "text_color": "white",
+    "body_lines": [
+      "logits (seq_len,num_classes)"
+    ],
+    "x": 600.0,
+    "y": 1280
+  },
+  {
+    "id": "output_0",
+    "type": "Output",
+    "formula": "\u0177 = log_softmax(logits)",
+    "color": "#2196F3",
+    "text_color": "white",
+    "body_lines": [
+      "\u0177 (seq_len,num_classes)"
+    ],
+    "x": 600.0,
+    "y": 1380
+  }
+];
+        const edgesData = [
+  {
+    "source": "input_0",
+    "target": "op_embed"
+  },
+  {
+    "source": "param_E",
+    "target": "op_embed"
+  },
+  {
+    "source": "op_embed",
+    "target": "op_pos_add"
+  },
+  {
+    "source": "param_PE",
+    "target": "op_pos_add"
+  },
+  {
+    "source": "op_pos_add",
+    "target": "op_Q"
+  },
+  {
+    "source": "op_pos_add",
+    "target": "op_K"
+  },
+  {
+    "source": "op_pos_add",
+    "target": "op_V"
+  },
+  {
+    "source": "param_Wq",
+    "target": "op_Q"
+  },
+  {
+    "source": "param_Wk",
+    "target": "op_K"
+  },
+  {
+    "source": "param_Wv",
+    "target": "op_V"
+  },
+  {
+    "source": "op_Q",
+    "target": "op_scores"
+  },
+  {
+    "source": "op_K",
+    "target": "op_scores"
+  },
+  {
+    "source": "const_sqrt",
+    "target": "op_scores"
+  },
+  {
+    "source": "op_scores",
+    "target": "op_softmax"
+  },
+  {
+    "source": "op_softmax",
+    "target": "op_context"
+  },
+  {
+    "source": "op_V",
+    "target": "op_context"
+  },
+  {
+    "source": "op_context",
+    "target": "op_attn_out"
+  },
+  {
+    "source": "param_Wo",
+    "target": "op_attn_out"
+  },
+  {
+    "source": "op_pos_add",
+    "target": "op_res1"
+  },
+  {
+    "source": "op_attn_out",
+    "target": "op_res1"
+  },
+  {
+    "source": "op_res1",
+    "target": "op_ff1"
+  },
+  {
+    "source": "param_W1",
+    "target": "op_ff1"
+  },
+  {
+    "source": "op_ff1",
+    "target": "op_ff2"
+  },
+  {
+    "source": "param_W2",
+    "target": "op_ff2"
+  },
+  {
+    "source": "op_res1",
+    "target": "op_res2"
+  },
+  {
+    "source": "op_ff2",
+    "target": "op_res2"
+  },
+  {
+    "source": "op_res2",
+    "target": "op_logits"
+  },
+  {
+    "source": "param_Wout",
+    "target": "op_logits"
+  },
+  {
+    "source": "op_logits",
+    "target": "output_0"
+  }
+];
+
+        // State
+        let scale = 1;
+        let panX = 0;
+        let panY = 0;
+        let selectedNodes = new Set();
+        let isDragging = false;
+        let isSelecting = false;
+        let dragStartX = 0;
+        let dragStartY = 0;
+        let selectStartX = 0;
+        let selectStartY = 0;
+        let draggedNode = null;
+        let nodeStartPositions = {};
+
+        const container = document.getElementById('container');
+        const graph = document.getElementById('graph');
+        const nodesContainer = document.getElementById('nodes-container');
+        const edgesSvg = document.getElementById('edges-svg');
+        const selectionRect = document.getElementById('selection-rect');
+
+        // Build node lookup
+        const nodeById = {};
+        nodesData.forEach(n => nodeById[n.id] = n);
+
+        function updateTransform() {
+            graph.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
+        }
+
+        function zoomIn() {
+            scale = Math.min(scale * 1.2, 5);
+            updateTransform();
+        }
+
+        function zoomOut() {
+            scale = Math.max(scale * 0.8, 0.1);
+            updateTransform();
+        }
+
+        function resetView() {
+            scale = 1;
+            panX = 0;
+            panY = 0;
+            updateTransform();
+        }
+
+        // Scroll to pan (NOT zoom)
+        container.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            panX -= e.deltaX;
+            panY -= e.deltaY;
+            updateTransform();
+        }, { passive: false });
+
+        // Create nodes
+        nodesData.forEach(node => {
+            const el = document.createElement('div');
+            el.className = 'node';
+            el.id = 'node-' + node.id;
+            el.style.left = node.x + 'px';
+            el.style.top = node.y + 'px';
+            el.style.background = node.color;
+            el.innerHTML = `
+                <div class="node-header" style="color: ${node.text_color}">${node.formula}</div>
+                <div class="node-body" style="color: ${node.text_color}">${node.body_lines.join('<br>')}</div>
+            `;
+
+            el.addEventListener('mousedown', (e) => {
+                e.stopPropagation();
+
+                if (e.shiftKey || e.ctrlKey || e.metaKey) {
+                    // Toggle selection
+                    if (selectedNodes.has(node.id)) {
+                        selectedNodes.delete(node.id);
+                        el.classList.remove('selected');
+                    } else {
+                        selectedNodes.add(node.id);
+                        el.classList.add('selected');
+                    }
+                    updateSelectionInfo();
+                } else {
+                    // If clicking unselected node, clear selection and select this one
+                    if (!selectedNodes.has(node.id)) {
+                        clearSelection();
+                        selectedNodes.add(node.id);
+                        el.classList.add('selected');
+                    }
+
+                    // Start dragging all selected nodes
+                    isDragging = true;
+                    draggedNode = node.id;
+                    dragStartX = e.clientX;
+                    dragStartY = e.clientY;
+
+                    // Store starting positions
+                    nodeStartPositions = {};
+                    selectedNodes.forEach(id => {
+                        const n = nodeById[id];
+                        nodeStartPositions[id] = { x: n.x, y: n.y };
+                    });
+                }
+                updateSelectionInfo();
+            });
+
+            nodesContainer.appendChild(el);
+        });
+
+        // Mouse move for dragging
+        document.addEventListener('mousemove', (e) => {
+            if (isDragging && draggedNode) {
+                const dx = (e.clientX - dragStartX) / scale;
+                const dy = (e.clientY - dragStartY) / scale;
+
+                selectedNodes.forEach(id => {
+                    const node = nodeById[id];
+                    const startPos = nodeStartPositions[id];
+                    node.x = startPos.x + dx;
+                    node.y = startPos.y + dy;
+
+                    const el = document.getElementById('node-' + id);
+                    el.style.left = node.x + 'px';
+                    el.style.top = node.y + 'px';
+                });
+
+                updateEdges();
+                updateSelectionInfo();
+            }
+
+            if (isSelecting) {
+                const rect = container.getBoundingClientRect();
+                const currentX = (e.clientX - rect.left - panX) / scale;
+                const currentY = (e.clientY - rect.top - panY) / scale;
+
+                const x = Math.min(selectStartX, currentX);
+                const y = Math.min(selectStartY, currentY);
+                const w = Math.abs(currentX - selectStartX);
+                const h = Math.abs(currentY - selectStartY);
+
+                selectionRect.style.display = 'block';
+                selectionRect.style.left = x + 'px';
+                selectionRect.style.top = y + 'px';
+                selectionRect.style.width = w + 'px';
+                selectionRect.style.height = h + 'px';
+            }
+        });
+
+        // Mouse up
+        document.addEventListener('mouseup', (e) => {
+            if (isSelecting) {
+                const rect = container.getBoundingClientRect();
+                const currentX = (e.clientX - rect.left - panX) / scale;
+                const currentY = (e.clientY - rect.top - panY) / scale;
+
+                const x1 = Math.min(selectStartX, currentX);
+                const y1 = Math.min(selectStartY, currentY);
+                const x2 = Math.max(selectStartX, currentX);
+                const y2 = Math.max(selectStartY, currentY);
+
+                // Select nodes in rectangle
+                if (!e.shiftKey) clearSelection();
+
+                nodesData.forEach(node => {
+                    const nodeEl = document.getElementById('node-' + node.id);
+                    const nodeW = nodeEl.offsetWidth;
+                    const nodeH = nodeEl.offsetHeight;
+
+                    if (node.x + nodeW > x1 && node.x < x2 &&
+                        node.y + nodeH > y1 && node.y < y2) {
+                        selectedNodes.add(node.id);
+                        nodeEl.classList.add('selected');
+                    }
+                });
+
+                selectionRect.style.display = 'none';
+                isSelecting = false;
+                updateSelectionInfo();
+            }
+
+            isDragging = false;
+            draggedNode = null;
+        });
+
+        // Click on container to start selection or clear
+        container.addEventListener('mousedown', (e) => {
+            if (e.target === container || e.target === graph || e.target === nodesContainer) {
+                const rect = container.getBoundingClientRect();
+                selectStartX = (e.clientX - rect.left - panX) / scale;
+                selectStartY = (e.clientY - rect.top - panY) / scale;
+                isSelecting = true;
+            }
+        });
+
+        function clearSelection() {
+            selectedNodes.forEach(id => {
+                const el = document.getElementById('node-' + id);
+                if (el) el.classList.remove('selected');
+            });
+            selectedNodes.clear();
+        }
+
+        function updateSelectionInfo() {
+            const infoId = document.getElementById('info-id');
+            const infoType = document.getElementById('info-type');
+            const infoX = document.getElementById('info-x');
+            const infoY = document.getElementById('info-y');
+
+            if (selectedNodes.size === 0) {
+                infoId.textContent = '-';
+                infoType.textContent = '-';
+                infoX.textContent = '-';
+                infoY.textContent = '-';
+            } else if (selectedNodes.size === 1) {
+                const id = Array.from(selectedNodes)[0];
+                const node = nodeById[id];
+                infoId.textContent = id;
+                infoType.textContent = node.type;
+                infoX.textContent = Math.round(node.x);
+                infoY.textContent = Math.round(node.y);
+            } else {
+                infoId.textContent = selectedNodes.size + ' nodes';
+                infoType.textContent = 'multiple';
+                infoX.textContent = '-';
+                infoY.textContent = '-';
+            }
+        }
+
+        function updateEdges() {
+            edgesSvg.innerHTML = '';
+
+            // Arrow marker
+            const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+            defs.innerHTML = `
+                <marker id="arrowhead" markerWidth="10" markerHeight="7"
+                        refX="9" refY="3.5" orient="auto">
+                    <polygon points="0 0, 10 3.5, 0 7" class="edge-arrow"/>
+                </marker>
+            `;
+            edgesSvg.appendChild(defs);
+
+            edgesData.forEach(edge => {
+                const sourceNode = nodeById[edge.source];
+                const targetNode = nodeById[edge.target];
+                if (!sourceNode || !targetNode) return;
+
+                const sourceEl = document.getElementById('node-' + edge.source);
+                const targetEl = document.getElementById('node-' + edge.target);
+
+                const x1 = sourceNode.x + sourceEl.offsetWidth / 2;
+                const y1 = sourceNode.y + sourceEl.offsetHeight;
+                const x2 = targetNode.x + targetEl.offsetWidth / 2;
+                const y2 = targetNode.y;
+
+                // Bezier curve
+                const midY = (y1 + y2) / 2;
+                const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                path.setAttribute('d', `M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}`);
+                path.setAttribute('class', 'edge');
+                path.setAttribute('marker-end', 'url(#arrowhead)');
+                edgesSvg.appendChild(path);
+            });
+        }
+
+        function exportPositions() {
+            const positions = {};
+            nodesData.forEach(n => {
+                positions[n.id] = { x: Math.round(n.x), y: Math.round(n.y) };
+            });
+            const blob = new Blob([JSON.stringify(positions, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'part0_graph_positions.json';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        // Initial render
+        updateEdges();
+        updateTransform();
+    </script>
+</body>
+</html>

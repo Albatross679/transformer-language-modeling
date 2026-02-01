@@ -1,0 +1,1636 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ONNX Computation Graph Viewer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f8f9fa;
+            overflow: hidden;
+        }
+        #toolbar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 50px;
+            background: #2c3e50;
+            color: white;
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
+            gap: 15px;
+            z-index: 100;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        }
+        #toolbar h1 {
+            font-size: 16px;
+            font-weight: 500;
+            flex: 1;
+        }
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        .btn-primary {
+            background: #27ae60;
+            color: white;
+        }
+        .btn-primary:hover {
+            background: #219a52;
+        }
+        .btn-secondary {
+            background: #3498db;
+            color: white;
+        }
+        .btn-secondary:hover {
+            background: #2980b9;
+        }
+        .btn-warning {
+            background: #e67e22;
+            color: white;
+        }
+        .btn-warning:hover {
+            background: #d35400;
+        }
+        #canvas-container {
+            position: fixed;
+            top: 50px;
+            left: 0;
+            right: 250px;
+            bottom: 0;
+            background: white;
+            overflow: hidden;
+        }
+        #graph-canvas {
+            width: 100%;
+            height: 100%;
+        }
+        #zoom-controls {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            display: flex;
+            gap: 5px;
+            z-index: 10;
+        }
+        #zoom-controls button {
+            width: 36px;
+            height: 36px;
+            border: 1px solid #dee2e6;
+            background: white;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        #zoom-controls button:hover {
+            background: #f8f9fa;
+        }
+        #zoom-level {
+            padding: 0 10px;
+            display: flex;
+            align-items: center;
+            font-size: 12px;
+            color: #6c757d;
+        }
+        #sidebar {
+            position: fixed;
+            top: 50px;
+            right: 0;
+            width: 250px;
+            bottom: 0;
+            background: #f8f9fa;
+            border-left: 1px solid #dee2e6;
+            padding: 15px;
+            overflow-y: auto;
+        }
+        #sidebar h2 {
+            font-size: 14px;
+            color: #2c3e50;
+            margin-bottom: 10px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #dee2e6;
+        }
+        #sidebar h3 {
+            font-size: 12px;
+            color: #6c757d;
+            margin: 15px 0 8px 0;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 6px 0;
+            font-size: 12px;
+        }
+        .legend-box {
+            width: 50px;
+            height: 24px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 9px;
+            color: white;
+            font-weight: 500;
+        }
+        .selected-info {
+            margin-top: 15px;
+            padding: 10px;
+            background: white;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        .selected-info label {
+            display: block;
+            color: #6c757d;
+            margin-bottom: 3px;
+        }
+        .selected-info input {
+            width: 100%;
+            padding: 5px;
+            border: 1px solid #ced4da;
+            border-radius: 3px;
+            font-size: 12px;
+            margin-bottom: 8px;
+        }
+        #instructions {
+            margin-top: 15px;
+            font-size: 11px;
+            color: #6c757d;
+            line-height: 1.6;
+        }
+        #instructions p {
+            margin: 4px 0;
+        }
+        .node-group {
+            cursor: grab;
+        }
+        .node-group:active {
+            cursor: grabbing;
+        }
+        .node-group.selected .node-header {
+            stroke: #e74c3c;
+            stroke-width: 3px;
+        }
+        #selection-rect {
+            fill: rgba(33, 150, 243, 0.1);
+            stroke: #2196F3;
+            stroke-width: 1;
+            stroke-dasharray: 5,3;
+        }
+        .edge-path {
+            fill: none;
+            stroke: #95a5a6;
+            stroke-width: 1.5;
+        }
+        .edge-label {
+            font-size: 10px;
+            fill: #6c757d;
+        }
+        #json-output {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 5px 30px rgba(0,0,0,0.3);
+            max-width: 600px;
+            max-height: 80vh;
+            overflow: auto;
+            z-index: 200;
+            display: none;
+        }
+        #json-output pre {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            font-size: 11px;
+            max-height: 400px;
+            overflow: auto;
+        }
+        #json-output .close-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: none;
+            border: none;
+            font-size: 20px;
+            cursor: pointer;
+            color: #6c757d;
+        }
+        #overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 150;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="toolbar">
+        <h1>ONNX Computation Graph Viewer</h1>
+        <button class="btn btn-warning" onclick="resetLayout()">Reset Layout</button>
+        <button class="btn btn-secondary" onclick="centerGraph()">Center Graph</button>
+        <button class="btn btn-primary" onclick="exportPositions()">Export JSON</button>
+    </div>
+
+    <div id="canvas-container">
+        <svg id="graph-canvas"></svg>
+        <div id="zoom-controls">
+            <button onclick="zoomIn()" title="Zoom In">+</button>
+            <button onclick="zoomOut()" title="Zoom Out">−</button>
+            <button onclick="resetView()" title="Reset View">⌂</button>
+            <span id="zoom-level">100%</span>
+        </div>
+    </div>
+
+    <div id="sidebar">
+        <h2>Legend</h2>
+        <div class="legend-item">
+            <div class="legend-box" style="background: #2196F3;">x, ŷ</div>
+            <span>Input / Output</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-box" style="background: #37474F;">f(x)</div>
+            <span>Operations</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-box" style="background: #7B1FA2;">W, b</div>
+            <span>Learnable Parameters</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-box" style="background: #FF9800;">√d</div>
+            <span>Constants</span>
+        </div>
+
+        <div id="selected-panel" class="selected-info" style="display: none;">
+            <h3>Selected Node</h3>
+            <label>ID: <span id="sel-id"></span></label>
+            <label>Type: <span id="sel-type"></span></label>
+            <label>X:</label>
+            <input type="number" id="sel-x" onchange="updateSelectedPosition()">
+            <label>Y:</label>
+            <input type="number" id="sel-y" onchange="updateSelectedPosition()">
+        </div>
+
+        <div id="instructions">
+            <h3>Instructions</h3>
+            <p><strong>Scroll/Swipe</strong> to pan view</p>
+            <p><strong>Drag node</strong> to reposition</p>
+            <p><strong>Click node</strong> to select</p>
+            <p><strong>Shift+Click</strong> to multi-select</p>
+            <p><strong>Drag on canvas</strong> to rectangle select</p>
+            <p><strong>+/−/⌂</strong> zoom controls</p>
+        </div>
+    </div>
+
+    <div id="overlay" onclick="closeExport()"></div>
+    <div id="json-output">
+        <button class="close-btn" onclick="closeExport()">&times;</button>
+        <h2>Exported Positions</h2>
+        <p style="margin: 10px 0; font-size: 12px; color: #6c757d;">
+            Copy this JSON to save your custom layout
+        </p>
+        <pre id="json-content"></pre>
+        <button class="btn btn-primary" style="margin-top: 10px;" onclick="copyToClipboard()">
+            Copy to Clipboard
+        </button>
+    </div>
+
+    <script>
+        // Embedded graph data
+        const nodesData = [
+  {
+    "id": "input_0",
+    "type": "Input",
+    "op_type": "Input",
+    "formula": "x = input",
+    "name": "input_indices",
+    "color": "#2196F3",
+    "text_color": "white",
+    "body_lines": [
+      "x (20)"
+    ]
+  },
+  {
+    "id": "param_1",
+    "type": "Param",
+    "op_type": "Param",
+    "formula": "E",
+    "name": "model.embedding.weight",
+    "color": "#7B1FA2",
+    "text_color": "white",
+    "body_lines": [
+      "(27,64)"
+    ]
+  },
+  {
+    "id": "param_2",
+    "type": "Param",
+    "op_type": "Param",
+    "formula": "PE",
+    "name": "onnx::Add_38",
+    "color": "#7B1FA2",
+    "text_color": "white",
+    "body_lines": [
+      "(20,64)"
+    ]
+  },
+  {
+    "id": "param_3",
+    "type": "Param",
+    "op_type": "Param",
+    "formula": "Wq",
+    "name": "model.layers.0.W_q.weight",
+    "color": "#7B1FA2",
+    "text_color": "white",
+    "body_lines": [
+      "(64,64)"
+    ]
+  },
+  {
+    "id": "param_4",
+    "type": "Param",
+    "op_type": "Param",
+    "formula": "Wq",
+    "name": "model.layers.0.W_q.bias",
+    "color": "#7B1FA2",
+    "text_color": "white",
+    "body_lines": [
+      "(64)"
+    ]
+  },
+  {
+    "id": "param_5",
+    "type": "Param",
+    "op_type": "Param",
+    "formula": "Wk",
+    "name": "model.layers.0.W_k.weight",
+    "color": "#7B1FA2",
+    "text_color": "white",
+    "body_lines": [
+      "(64,64)"
+    ]
+  },
+  {
+    "id": "param_6",
+    "type": "Param",
+    "op_type": "Param",
+    "formula": "Wk",
+    "name": "model.layers.0.W_k.bias",
+    "color": "#7B1FA2",
+    "text_color": "white",
+    "body_lines": [
+      "(64)"
+    ]
+  },
+  {
+    "id": "param_7",
+    "type": "Param",
+    "op_type": "Param",
+    "formula": "Wv",
+    "name": "model.layers.0.W_v.weight",
+    "color": "#7B1FA2",
+    "text_color": "white",
+    "body_lines": [
+      "(64,64)"
+    ]
+  },
+  {
+    "id": "param_8",
+    "type": "Param",
+    "op_type": "Param",
+    "formula": "Wv",
+    "name": "model.layers.0.W_v.bias",
+    "color": "#7B1FA2",
+    "text_color": "white",
+    "body_lines": [
+      "(64)"
+    ]
+  },
+  {
+    "id": "param_9",
+    "type": "Param",
+    "op_type": "Param",
+    "formula": "Wo",
+    "name": "model.layers.0.W_o.weight",
+    "color": "#7B1FA2",
+    "text_color": "white",
+    "body_lines": [
+      "(64,64)"
+    ]
+  },
+  {
+    "id": "param_10",
+    "type": "Param",
+    "op_type": "Param",
+    "formula": "Wo",
+    "name": "model.layers.0.W_o.bias",
+    "color": "#7B1FA2",
+    "text_color": "white",
+    "body_lines": [
+      "(64)"
+    ]
+  },
+  {
+    "id": "param_11",
+    "type": "Param",
+    "op_type": "Param",
+    "formula": "W1",
+    "name": "model.layers.0.ff1.weight",
+    "color": "#7B1FA2",
+    "text_color": "white",
+    "body_lines": [
+      "(64,64)"
+    ]
+  },
+  {
+    "id": "param_12",
+    "type": "Param",
+    "op_type": "Param",
+    "formula": "b1",
+    "name": "model.layers.0.ff1.bias",
+    "color": "#7B1FA2",
+    "text_color": "white",
+    "body_lines": [
+      "(64)"
+    ]
+  },
+  {
+    "id": "param_13",
+    "type": "Param",
+    "op_type": "Param",
+    "formula": "W2",
+    "name": "model.layers.0.ff2.weight",
+    "color": "#7B1FA2",
+    "text_color": "white",
+    "body_lines": [
+      "(64,64)"
+    ]
+  },
+  {
+    "id": "param_14",
+    "type": "Param",
+    "op_type": "Param",
+    "formula": "b2",
+    "name": "model.layers.0.ff2.bias",
+    "color": "#7B1FA2",
+    "text_color": "white",
+    "body_lines": [
+      "(64)"
+    ]
+  },
+  {
+    "id": "param_15",
+    "type": "Param",
+    "op_type": "Param",
+    "formula": "Wout",
+    "name": "model.output_proj.weight",
+    "color": "#7B1FA2",
+    "text_color": "white",
+    "body_lines": [
+      "(3,64)"
+    ]
+  },
+  {
+    "id": "param_16",
+    "type": "Param",
+    "op_type": "Param",
+    "formula": "bout",
+    "name": "model.output_proj.bias",
+    "color": "#7B1FA2",
+    "text_color": "white",
+    "body_lines": [
+      "(3)"
+    ]
+  },
+  {
+    "id": "op_17",
+    "type": "Op",
+    "op_type": "Gather",
+    "formula": "e = E[x]",
+    "name": "/model/embedding/Gather",
+    "color": "#37474F",
+    "text_color": "white",
+    "body_lines": [
+      "e (20,64)"
+    ]
+  },
+  {
+    "id": "op_18",
+    "type": "Op",
+    "op_type": "Add",
+    "formula": "x = e + p",
+    "name": "/model/positional_encoding/Add",
+    "color": "#37474F",
+    "text_color": "white",
+    "body_lines": [
+      "x (20,64)"
+    ]
+  },
+  {
+    "id": "op_19",
+    "type": "Op",
+    "op_type": "Gemm",
+    "formula": "Q = X\u00b7Wq + b",
+    "name": "/model/layers.0/W_q/Gemm",
+    "color": "#37474F",
+    "text_color": "white",
+    "body_lines": [
+      "Q (20,64)"
+    ]
+  },
+  {
+    "id": "op_20",
+    "type": "Op",
+    "op_type": "Gemm",
+    "formula": "K = X\u00b7Wk + b",
+    "name": "/model/layers.0/W_k/Gemm",
+    "color": "#37474F",
+    "text_color": "white",
+    "body_lines": [
+      "K (20,64)"
+    ]
+  },
+  {
+    "id": "op_21",
+    "type": "Op",
+    "op_type": "Gemm",
+    "formula": "V = X\u00b7Wv + b",
+    "name": "/model/layers.0/W_v/Gemm",
+    "color": "#37474F",
+    "text_color": "white",
+    "body_lines": [
+      "V (20,64)"
+    ]
+  },
+  {
+    "id": "op_22",
+    "type": "Op",
+    "op_type": "Transpose",
+    "formula": "K\u1d40 = X\u1d40",
+    "name": "/model/layers.0/Transpose",
+    "color": "#37474F",
+    "text_color": "white",
+    "body_lines": [
+      "K\u1d40 (64,20)"
+    ]
+  },
+  {
+    "id": "op_23",
+    "type": "Op",
+    "op_type": "MatMul",
+    "formula": "scores = Q\u00b7K\u1d40",
+    "name": "/model/layers.0/MatMul",
+    "color": "#37474F",
+    "text_color": "white",
+    "body_lines": [
+      "scores (20,20)"
+    ]
+  },
+  {
+    "id": "op_24",
+    "type": "Const",
+    "op_type": "Constant",
+    "formula": "s = 1/\u221ad",
+    "name": "/model/layers.0/Constant",
+    "color": "#FF9800",
+    "text_color": "white",
+    "body_lines": [
+      "scalar"
+    ]
+  },
+  {
+    "id": "op_25",
+    "type": "Op",
+    "op_type": "Div",
+    "formula": "s = X / \u221ad",
+    "name": "/model/layers.0/Div",
+    "color": "#37474F",
+    "text_color": "white",
+    "body_lines": [
+      "s (20,20)"
+    ]
+  },
+  {
+    "id": "op_26",
+    "type": "Op",
+    "op_type": "Softmax",
+    "formula": "\u03b1 = softmax(X)",
+    "name": "/model/layers.0/Softmax",
+    "color": "#37474F",
+    "text_color": "white",
+    "body_lines": [
+      "\u03b1 (20,20)"
+    ]
+  },
+  {
+    "id": "op_27",
+    "type": "Op",
+    "op_type": "MatMul",
+    "formula": "attn = \u03b1\u00b7V",
+    "name": "/model/layers.0/MatMul_1",
+    "color": "#37474F",
+    "text_color": "white",
+    "body_lines": [
+      "attn (20,64)"
+    ]
+  },
+  {
+    "id": "op_28",
+    "type": "Op",
+    "op_type": "Gemm",
+    "formula": "a = X\u00b7Wo + b",
+    "name": "/model/layers.0/W_o/Gemm",
+    "color": "#37474F",
+    "text_color": "white",
+    "body_lines": [
+      "a (20,64)"
+    ]
+  },
+  {
+    "id": "op_29",
+    "type": "Op",
+    "op_type": "Add",
+    "formula": "z = A + B",
+    "name": "/model/layers.0/Add",
+    "color": "#37474F",
+    "text_color": "white",
+    "body_lines": [
+      "z (20,64)"
+    ]
+  },
+  {
+    "id": "op_30",
+    "type": "Op",
+    "op_type": "Gemm",
+    "formula": "h = X\u00b7W1 + b",
+    "name": "/model/layers.0/ff1/Gemm",
+    "color": "#37474F",
+    "text_color": "white",
+    "body_lines": [
+      "h (20,64)"
+    ]
+  },
+  {
+    "id": "op_31",
+    "type": "Op",
+    "op_type": "Relu",
+    "formula": "h = ReLU(X)",
+    "name": "/model/layers.0/Relu",
+    "color": "#37474F",
+    "text_color": "white",
+    "body_lines": [
+      "h (20,64)"
+    ]
+  },
+  {
+    "id": "op_32",
+    "type": "Op",
+    "op_type": "Gemm",
+    "formula": "f = X\u00b7W2 + b",
+    "name": "/model/layers.0/ff2/Gemm",
+    "color": "#37474F",
+    "text_color": "white",
+    "body_lines": [
+      "f (20,64)"
+    ]
+  },
+  {
+    "id": "op_33",
+    "type": "Op",
+    "op_type": "Add",
+    "formula": "z = A + B",
+    "name": "/model/layers.0/Add_1",
+    "color": "#37474F",
+    "text_color": "white",
+    "body_lines": [
+      "z (20,64)"
+    ]
+  },
+  {
+    "id": "op_34",
+    "type": "Op",
+    "op_type": "Gemm",
+    "formula": "logits = X\u00b7Wout + b",
+    "name": "/model/output_proj/Gemm",
+    "color": "#37474F",
+    "text_color": "white",
+    "body_lines": [
+      "logits (20,3)"
+    ]
+  },
+  {
+    "id": "op_35",
+    "type": "Op",
+    "op_type": "LogSoftmax",
+    "formula": "\u0177 = log_softmax(X)",
+    "name": "/model/LogSoftmax",
+    "color": "#37474F",
+    "text_color": "white",
+    "body_lines": [
+      "\u0177 (20,3)"
+    ]
+  },
+  {
+    "id": "output_36",
+    "type": "Output",
+    "op_type": "Output",
+    "formula": "\u0177 = output",
+    "name": "log_probs",
+    "color": "#2196F3",
+    "text_color": "white",
+    "body_lines": [
+      "\u0177 (20,3)"
+    ]
+  }
+];
+        const edgesData = [
+  {
+    "source": "param_1",
+    "target": "op_17",
+    "label": ""
+  },
+  {
+    "source": "input_0",
+    "target": "op_17",
+    "label": ""
+  },
+  {
+    "source": "op_17",
+    "target": "op_18",
+    "label": ""
+  },
+  {
+    "source": "param_2",
+    "target": "op_18",
+    "label": ""
+  },
+  {
+    "source": "op_18",
+    "target": "op_19",
+    "label": ""
+  },
+  {
+    "source": "param_3",
+    "target": "op_19",
+    "label": ""
+  },
+  {
+    "source": "param_4",
+    "target": "op_19",
+    "label": ""
+  },
+  {
+    "source": "op_18",
+    "target": "op_20",
+    "label": ""
+  },
+  {
+    "source": "param_5",
+    "target": "op_20",
+    "label": ""
+  },
+  {
+    "source": "param_6",
+    "target": "op_20",
+    "label": ""
+  },
+  {
+    "source": "op_18",
+    "target": "op_21",
+    "label": ""
+  },
+  {
+    "source": "param_7",
+    "target": "op_21",
+    "label": ""
+  },
+  {
+    "source": "param_8",
+    "target": "op_21",
+    "label": ""
+  },
+  {
+    "source": "op_20",
+    "target": "op_22",
+    "label": ""
+  },
+  {
+    "source": "op_19",
+    "target": "op_23",
+    "label": ""
+  },
+  {
+    "source": "op_22",
+    "target": "op_23",
+    "label": ""
+  },
+  {
+    "source": "op_23",
+    "target": "op_25",
+    "label": ""
+  },
+  {
+    "source": "op_24",
+    "target": "op_25",
+    "label": ""
+  },
+  {
+    "source": "op_25",
+    "target": "op_26",
+    "label": ""
+  },
+  {
+    "source": "op_26",
+    "target": "op_27",
+    "label": ""
+  },
+  {
+    "source": "op_21",
+    "target": "op_27",
+    "label": ""
+  },
+  {
+    "source": "op_27",
+    "target": "op_28",
+    "label": ""
+  },
+  {
+    "source": "param_9",
+    "target": "op_28",
+    "label": ""
+  },
+  {
+    "source": "param_10",
+    "target": "op_28",
+    "label": ""
+  },
+  {
+    "source": "op_18",
+    "target": "op_29",
+    "label": ""
+  },
+  {
+    "source": "op_28",
+    "target": "op_29",
+    "label": ""
+  },
+  {
+    "source": "op_29",
+    "target": "op_30",
+    "label": ""
+  },
+  {
+    "source": "param_11",
+    "target": "op_30",
+    "label": ""
+  },
+  {
+    "source": "param_12",
+    "target": "op_30",
+    "label": ""
+  },
+  {
+    "source": "op_30",
+    "target": "op_31",
+    "label": ""
+  },
+  {
+    "source": "op_31",
+    "target": "op_32",
+    "label": ""
+  },
+  {
+    "source": "param_13",
+    "target": "op_32",
+    "label": ""
+  },
+  {
+    "source": "param_14",
+    "target": "op_32",
+    "label": ""
+  },
+  {
+    "source": "op_29",
+    "target": "op_33",
+    "label": ""
+  },
+  {
+    "source": "op_32",
+    "target": "op_33",
+    "label": ""
+  },
+  {
+    "source": "op_33",
+    "target": "op_34",
+    "label": ""
+  },
+  {
+    "source": "param_15",
+    "target": "op_34",
+    "label": ""
+  },
+  {
+    "source": "param_16",
+    "target": "op_34",
+    "label": ""
+  },
+  {
+    "source": "op_34",
+    "target": "op_35",
+    "label": ""
+  },
+  {
+    "source": "op_35",
+    "target": "output_36",
+    "label": ""
+  }
+];
+        let positions = {
+  "param_1": {
+    "x": 322.5,
+    "y": 50
+  },
+  "input_0": {
+    "x": 507.5,
+    "y": 50
+  },
+  "param_2": {
+    "x": 322.5,
+    "y": 160
+  },
+  "op_17": {
+    "x": 507.5,
+    "y": 160
+  },
+  "param_7": {
+    "x": -140.0,
+    "y": 270
+  },
+  "param_5": {
+    "x": 45.0,
+    "y": 270
+  },
+  "param_3": {
+    "x": 230.0,
+    "y": 270
+  },
+  "op_18": {
+    "x": 415.0,
+    "y": 270
+  },
+  "param_4": {
+    "x": 600.0,
+    "y": 270
+  },
+  "param_6": {
+    "x": 785.0,
+    "y": 270
+  },
+  "param_8": {
+    "x": 970.0,
+    "y": 270
+  },
+  "op_20": {
+    "x": 230.0,
+    "y": 380
+  },
+  "op_19": {
+    "x": 415.0,
+    "y": 380
+  },
+  "op_21": {
+    "x": 600.0,
+    "y": 380
+  },
+  "op_22": {
+    "x": 415.0,
+    "y": 490
+  },
+  "op_24": {
+    "x": 322.5,
+    "y": 600
+  },
+  "op_23": {
+    "x": 507.5,
+    "y": 600
+  },
+  "op_25": {
+    "x": 415.0,
+    "y": 710
+  },
+  "op_26": {
+    "x": 415.0,
+    "y": 820
+  },
+  "param_9": {
+    "x": 230.0,
+    "y": 930
+  },
+  "op_27": {
+    "x": 415.0,
+    "y": 930
+  },
+  "param_10": {
+    "x": 600.0,
+    "y": 930
+  },
+  "op_28": {
+    "x": 415.0,
+    "y": 1040
+  },
+  "param_11": {
+    "x": 230.0,
+    "y": 1150
+  },
+  "op_29": {
+    "x": 415.0,
+    "y": 1150
+  },
+  "param_12": {
+    "x": 600.0,
+    "y": 1150
+  },
+  "op_30": {
+    "x": 415.0,
+    "y": 1260
+  },
+  "param_13": {
+    "x": 230.0,
+    "y": 1370
+  },
+  "op_31": {
+    "x": 415.0,
+    "y": 1370
+  },
+  "param_14": {
+    "x": 600.0,
+    "y": 1370
+  },
+  "op_32": {
+    "x": 415.0,
+    "y": 1480
+  },
+  "param_15": {
+    "x": 230.0,
+    "y": 1590
+  },
+  "op_33": {
+    "x": 415.0,
+    "y": 1590
+  },
+  "param_16": {
+    "x": 600.0,
+    "y": 1590
+  },
+  "op_34": {
+    "x": 415.0,
+    "y": 1700
+  },
+  "op_35": {
+    "x": 415.0,
+    "y": 1810
+  },
+  "output_36": {
+    "x": 415.0,
+    "y": 1920
+  }
+};
+        const originalPositions = JSON.parse(JSON.stringify(positions));
+
+        // State
+        let selectedNodes = new Set();  // Multi-select support
+        let svg, nodesGroup, edgesGroup, mainGroup;
+        let width, height;
+
+        // Pan and Zoom state
+        let scale = 1;
+        let panX = 0, panY = 0;
+
+        // Drag state for bulk drag
+        let isDragging = false;
+        let dragStartX = 0, dragStartY = 0;
+        let dragStartPositions = {};
+
+        // Rectangle selection state
+        let isSelecting = false;
+        let selectStartX = 0, selectStartY = 0;
+        let selectionRect = null;
+
+        // Node dimensions
+        const NODE_WIDTH = 160;
+        const NODE_HEADER_HEIGHT = 32;
+        const NODE_LINE_HEIGHT = 16;
+        const NODE_PADDING = 6;
+
+        function getNodeHeight(node) {
+            const bodyLines = node.body_lines.length;
+            if (bodyLines === 0) {
+                return NODE_HEADER_HEIGHT + NODE_PADDING;
+            }
+            return NODE_HEADER_HEIGHT + bodyLines * NODE_LINE_HEIGHT + NODE_PADDING * 2;
+        }
+
+        function init() {
+            svg = document.getElementById('graph-canvas');
+            const container = document.getElementById('canvas-container');
+            width = container.clientWidth;
+            height = container.clientHeight;
+
+            svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+
+            // Create arrow marker
+            const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+            defs.innerHTML = `
+                <marker id="arrowhead" markerWidth="10" markerHeight="7"
+                        refX="9" refY="3.5" orient="auto">
+                    <polygon points="0 0, 10 3.5, 0 7" fill="#95a5a6" />
+                </marker>
+            `;
+            svg.appendChild(defs);
+
+            // Create main group for pan/zoom transforms
+            mainGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+            mainGroup.id = 'main-group';
+            svg.appendChild(mainGroup);
+
+            // Create groups for edges (below) and nodes (above)
+            edgesGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+            edgesGroup.id = 'edges';
+            mainGroup.appendChild(edgesGroup);
+
+            nodesGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+            nodesGroup.id = 'nodes';
+            mainGroup.appendChild(nodesGroup);
+
+            render();
+
+            // Click on canvas to deselect all (only if not selecting)
+            svg.addEventListener('click', (e) => {
+                if (isSelecting) return;
+                if (e.target === svg || e.target.tagName === 'path') {
+                    selectedNodes.clear();
+                    updateSelectedPanel();
+                    render();
+                }
+            });
+
+            // Rectangle selection: mousedown on background starts selection
+            svg.addEventListener('mousedown', (e) => {
+                // Only start selection if clicking on empty area (not on a node)
+                if (e.target !== svg && !e.target.classList.contains('edge-path')) return;
+
+                isSelecting = true;
+                const rect = svg.getBoundingClientRect();
+                // Convert to SVG coordinates accounting for pan and scale
+                selectStartX = (e.clientX - rect.left - panX) / scale;
+                selectStartY = (e.clientY - rect.top - panY) / scale;
+
+                // Create selection rectangle element
+                selectionRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                selectionRect.setAttribute('id', 'selection-rect');
+                selectionRect.setAttribute('x', selectStartX);
+                selectionRect.setAttribute('y', selectStartY);
+                selectionRect.setAttribute('width', 0);
+                selectionRect.setAttribute('height', 0);
+                mainGroup.appendChild(selectionRect);
+            });
+
+            // Rectangle selection: mousemove updates rectangle size
+            svg.addEventListener('mousemove', (e) => {
+                if (!isSelecting || !selectionRect) return;
+
+                const rect = svg.getBoundingClientRect();
+                const currentX = (e.clientX - rect.left - panX) / scale;
+                const currentY = (e.clientY - rect.top - panY) / scale;
+
+                // Calculate rectangle bounds (handle negative drag)
+                const x = Math.min(selectStartX, currentX);
+                const y = Math.min(selectStartY, currentY);
+                const width = Math.abs(currentX - selectStartX);
+                const height = Math.abs(currentY - selectStartY);
+
+                selectionRect.setAttribute('x', x);
+                selectionRect.setAttribute('y', y);
+                selectionRect.setAttribute('width', width);
+                selectionRect.setAttribute('height', height);
+            });
+
+            // Rectangle selection: mouseup finalizes selection
+            svg.addEventListener('mouseup', (e) => {
+                if (!isSelecting || !selectionRect) return;
+
+                const rect = svg.getBoundingClientRect();
+                const currentX = (e.clientX - rect.left - panX) / scale;
+                const currentY = (e.clientY - rect.top - panY) / scale;
+
+                // Calculate selection bounds
+                const selX = Math.min(selectStartX, currentX);
+                const selY = Math.min(selectStartY, currentY);
+                const selW = Math.abs(currentX - selectStartX);
+                const selH = Math.abs(currentY - selectStartY);
+
+                // Only select if rectangle has meaningful size
+                if (selW > 5 && selH > 5) {
+                    // If not shift/ctrl, clear previous selection
+                    if (!e.shiftKey && !e.ctrlKey && !e.metaKey) {
+                        selectedNodes.clear();
+                    }
+
+                    // Find nodes within selection rectangle
+                    nodesData.forEach(node => {
+                        const pos = positions[node.id];
+                        if (!pos) return;
+
+                        const nodeHeight = getNodeHeight(node);
+                        // Check if node overlaps with selection rectangle
+                        const nodeLeft = pos.x;
+                        const nodeRight = pos.x + NODE_WIDTH;
+                        const nodeTop = pos.y;
+                        const nodeBottom = pos.y + nodeHeight;
+
+                        const selRight = selX + selW;
+                        const selBottom = selY + selH;
+
+                        // Node is within selection if rectangles overlap
+                        if (nodeLeft < selRight && nodeRight > selX &&
+                            nodeTop < selBottom && nodeBottom > selY) {
+                            selectedNodes.add(node.id);
+                        }
+                    });
+
+                    updateSelectedPanel();
+                    render();
+                }
+
+                // Remove selection rectangle
+                if (selectionRect && selectionRect.parentNode) {
+                    selectionRect.parentNode.removeChild(selectionRect);
+                }
+                selectionRect = null;
+                isSelecting = false;
+            });
+
+            // Scroll wheel: pan the view (not zoom)
+            container.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                // Use deltaX for horizontal scroll, deltaY for vertical scroll
+                // Invert for natural scrolling feel
+                panX -= e.deltaX;
+                panY -= e.deltaY;
+                updateTransform();
+            });
+        }
+
+        function updateTransform() {
+            mainGroup.setAttribute('transform', `translate(${panX}, ${panY}) scale(${scale})`);
+        }
+
+        function updateZoomLevel() {
+            document.getElementById('zoom-level').textContent = Math.round(scale * 100) + '%';
+        }
+
+        function zoomIn() {
+            scale = Math.min(scale * 1.2, 5);
+            updateTransform();
+            updateZoomLevel();
+        }
+
+        function zoomOut() {
+            scale = Math.max(scale * 0.8, 0.1);
+            updateTransform();
+            updateZoomLevel();
+        }
+
+        function resetView() {
+            scale = 1;
+            panX = 0;
+            panY = 0;
+            updateTransform();
+            updateZoomLevel();
+        }
+
+        function render() {
+            edgesGroup.innerHTML = '';
+            nodesGroup.innerHTML = '';
+
+            // Preserve transform
+            updateTransform();
+
+            // Build node lookup for edge calculations
+            const nodeMap = {};
+            nodesData.forEach(n => {
+                nodeMap[n.id] = n;
+            });
+
+            // Draw edges first (below nodes)
+            edgesData.forEach(edge => {
+                const srcNode = nodeMap[edge.source];
+                const tgtNode = nodeMap[edge.target];
+                const srcPos = positions[edge.source];
+                const tgtPos = positions[edge.target];
+                if (!srcPos || !tgtPos || !srcNode || !tgtNode) return;
+
+                const srcHeight = getNodeHeight(srcNode);
+                const tgtHeight = getNodeHeight(tgtNode);
+
+                // Calculate edge endpoints (center-bottom to center-top)
+                const x1 = srcPos.x + NODE_WIDTH / 2;
+                const y1 = srcPos.y + srcHeight;
+                const x2 = tgtPos.x + NODE_WIDTH / 2;
+                const y2 = tgtPos.y - 8; // Space for arrow
+
+                // Create curved path
+                const midY = (y1 + y2) / 2;
+                const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                const d = `M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}`;
+                path.setAttribute('d', d);
+                path.setAttribute('class', 'edge-path');
+                path.setAttribute('marker-end', 'url(#arrowhead)');
+                edgesGroup.appendChild(path);
+
+                // Edge label
+                if (edge.label) {
+                    const labelX = (x1 + x2) / 2;
+                    const labelY = midY - 5;
+                    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                    text.setAttribute('x', labelX);
+                    text.setAttribute('y', labelY);
+                    text.setAttribute('class', 'edge-label');
+                    text.setAttribute('text-anchor', 'middle');
+                    text.textContent = edge.label;
+                    edgesGroup.appendChild(text);
+                }
+            });
+
+            // Draw nodes
+            nodesData.forEach(node => {
+                const pos = positions[node.id];
+                if (!pos) return;
+
+                const nodeHeight = getNodeHeight(node);
+                const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+                g.setAttribute('class', 'node-group');
+                g.setAttribute('data-id', node.id);
+                g.setAttribute('transform', `translate(${pos.x}, ${pos.y})`);
+
+                // Node background (body)
+                const body = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                body.setAttribute('x', 0);
+                body.setAttribute('y', 0);
+                body.setAttribute('width', NODE_WIDTH);
+                body.setAttribute('height', nodeHeight);
+                body.setAttribute('rx', 6);
+                body.setAttribute('ry', 6);
+                body.setAttribute('fill', 'white');
+                body.setAttribute('stroke', '#dee2e6');
+                body.setAttribute('stroke-width', 1);
+                g.appendChild(body);
+
+                // Header background
+                const header = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                header.setAttribute('class', 'node-header');
+                header.setAttribute('x', 0);
+                header.setAttribute('y', 0);
+                header.setAttribute('width', NODE_WIDTH);
+                header.setAttribute('height', NODE_HEADER_HEIGHT);
+                header.setAttribute('rx', 6);
+                header.setAttribute('ry', 6);
+                header.setAttribute('fill', node.color);
+                g.appendChild(header);
+
+                // Header bottom cover (to square off bottom of header)
+                const headerBottom = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                headerBottom.setAttribute('x', 0);
+                headerBottom.setAttribute('y', NODE_HEADER_HEIGHT - 6);
+                headerBottom.setAttribute('width', NODE_WIDTH);
+                headerBottom.setAttribute('height', 6);
+                headerBottom.setAttribute('fill', node.color);
+                g.appendChild(headerBottom);
+
+                // Header text (formula)
+                const headerText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                headerText.setAttribute('x', NODE_WIDTH / 2);
+                headerText.setAttribute('y', NODE_HEADER_HEIGHT / 2 + 4);
+                headerText.setAttribute('text-anchor', 'middle');
+                headerText.setAttribute('fill', node.text_color);
+                headerText.setAttribute('font-size', '11');
+                headerText.setAttribute('font-weight', '500');
+                headerText.setAttribute('font-style', 'italic');
+                headerText.textContent = node.formula || node.op_type;
+                g.appendChild(headerText);
+
+                // Body text (tensor info)
+                node.body_lines.forEach((line, idx) => {
+                    const bodyText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                    bodyText.setAttribute('x', NODE_PADDING);
+                    bodyText.setAttribute('y', NODE_HEADER_HEIGHT + NODE_PADDING + (idx + 1) * NODE_LINE_HEIGHT - 3);
+                    bodyText.setAttribute('fill', '#495057');
+                    bodyText.setAttribute('font-size', '10');
+                    bodyText.setAttribute('font-family', 'monospace');
+                    bodyText.textContent = line;
+                    g.appendChild(bodyText);
+                });
+
+                // Click handling for selection (Shift/Ctrl+Click for multi-select)
+                g.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (e.shiftKey || e.ctrlKey || e.metaKey) {
+                        // Toggle selection
+                        if (selectedNodes.has(node.id)) {
+                            selectedNodes.delete(node.id);
+                        } else {
+                            selectedNodes.add(node.id);
+                        }
+                    } else {
+                        // Single select (unless already selected for drag)
+                        if (!selectedNodes.has(node.id)) {
+                            selectedNodes.clear();
+                            selectedNodes.add(node.id);
+                        }
+                    }
+                    updateSelectedPanel();
+                    render();
+                });
+
+                // Drag handling for bulk drag
+                g.addEventListener('mousedown', (e) => {
+                    // If node not selected, select it first
+                    if (!selectedNodes.has(node.id)) {
+                        if (!e.shiftKey && !e.ctrlKey && !e.metaKey) {
+                            selectedNodes.clear();
+                        }
+                        selectedNodes.add(node.id);
+                        render();
+                    }
+
+                    // Start dragging all selected nodes
+                    isDragging = true;
+                    dragStartX = e.clientX;
+                    dragStartY = e.clientY;
+                    // Store starting positions of all selected nodes
+                    dragStartPositions = {};
+                    selectedNodes.forEach(id => {
+                        dragStartPositions[id] = { x: positions[id].x, y: positions[id].y };
+                    });
+                    e.stopPropagation();
+                });
+
+                nodesGroup.appendChild(g);
+            });
+
+            // Highlight all selected nodes
+            selectedNodes.forEach(nodeId => {
+                const nodeEl = nodesGroup.querySelector(`[data-id="${nodeId}"]`);
+                if (nodeEl) nodeEl.classList.add('selected');
+            });
+        }
+
+        // Global mouse move/up for bulk drag
+        document.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            const dx = (e.clientX - dragStartX) / scale;
+            const dy = (e.clientY - dragStartY) / scale;
+            // Move all selected nodes
+            selectedNodes.forEach(id => {
+                if (dragStartPositions[id]) {
+                    positions[id].x = dragStartPositions[id].x + dx;
+                    positions[id].y = dragStartPositions[id].y + dy;
+                }
+            });
+            render();
+            updateSelectedPanel();
+        });
+
+        document.addEventListener('mouseup', () => {
+            isDragging = false;
+            dragStartPositions = {};
+        });
+
+        function updateSelectedPanel() {
+            const panel = document.getElementById('selected-panel');
+
+            if (selectedNodes.size === 0) {
+                panel.style.display = 'none';
+                return;
+            }
+
+            panel.style.display = 'block';
+            const nodeIds = Array.from(selectedNodes);
+
+            if (selectedNodes.size === 1) {
+                const nodeId = nodeIds[0];
+                const node = nodesData.find(n => n.id === nodeId);
+                const pos = positions[nodeId];
+                document.getElementById('sel-id').textContent = nodeId;
+                document.getElementById('sel-type').textContent = node ? node.op_type : '';
+                document.getElementById('sel-x').value = Math.round(pos.x);
+                document.getElementById('sel-y').value = Math.round(pos.y);
+            } else {
+                document.getElementById('sel-id').textContent = `${selectedNodes.size} nodes`;
+                document.getElementById('sel-type').textContent = 'multiple';
+                document.getElementById('sel-x').value = '-';
+                document.getElementById('sel-y').value = '-';
+            }
+        }
+
+        function updateSelectedPosition() {
+            if (selectedNodes.size !== 1) return;
+            const nodeId = Array.from(selectedNodes)[0];
+            positions[nodeId].x = parseFloat(document.getElementById('sel-x').value);
+            positions[nodeId].y = parseFloat(document.getElementById('sel-y').value);
+            render();
+        }
+
+        function resetLayout() {
+            positions = JSON.parse(JSON.stringify(originalPositions));
+            render();
+        }
+
+        function centerGraph() {
+            let minX = Infinity, maxX = -Infinity;
+            let minY = Infinity, maxY = -Infinity;
+
+            Object.entries(positions).forEach(([nodeId, pos]) => {
+                const node = nodesData.find(n => n.id === nodeId);
+                const h = node ? getNodeHeight(node) : 50;
+                minX = Math.min(minX, pos.x);
+                maxX = Math.max(maxX, pos.x + NODE_WIDTH);
+                minY = Math.min(minY, pos.y);
+                maxY = Math.max(maxY, pos.y + h);
+            });
+
+            const graphWidth = maxX - minX;
+            const graphHeight = maxY - minY;
+            const centerX = (width - 250) / 2;
+            const centerY = height / 2;
+            const offsetX = centerX - (minX + graphWidth / 2);
+            const offsetY = centerY - (minY + graphHeight / 2);
+
+            Object.keys(positions).forEach(nodeId => {
+                positions[nodeId].x += offsetX;
+                positions[nodeId].y += offsetY;
+            });
+
+            render();
+        }
+
+        function exportPositions() {
+            const exportData = {};
+            Object.entries(positions).forEach(([nodeId, pos]) => {
+                exportData[nodeId] = [Math.round(pos.x), Math.round(pos.y)];
+            });
+
+            const json = JSON.stringify(exportData, null, 2);
+            document.getElementById('json-content').textContent = json;
+            document.getElementById('overlay').style.display = 'block';
+            document.getElementById('json-output').style.display = 'block';
+        }
+
+        function closeExport() {
+            document.getElementById('overlay').style.display = 'none';
+            document.getElementById('json-output').style.display = 'none';
+        }
+
+        function copyToClipboard() {
+            const json = document.getElementById('json-content').textContent;
+            navigator.clipboard.writeText(json).then(() => {
+                alert('Copied to clipboard!');
+            });
+        }
+
+        window.addEventListener('load', init);
+        window.addEventListener('resize', () => {
+            const container = document.getElementById('canvas-container');
+            width = container.clientWidth;
+            height = container.clientHeight;
+            svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+            render();
+        });
+    </script>
+</body>
+</html>
